@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Schlaufuchs – Deine Schul-KI</title>
 <meta name="description" content="KI-Assistent für Hausaufgaben, Bildanalyse und Arbeitsblätter" />
+<link rel="icon" type="image/png" href="logo.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Caveat:wght@600;700&display=swap" rel="stylesheet">
 <style>
@@ -134,6 +135,73 @@
     line-height:1.5;
   }
   .sidebar-footer b{color:rgba(239,239,231,0.6);}
+
+  /* ---------- Chat-Verlauf ---------- */
+  .chat-history{
+    display:flex;
+    flex-direction:column;
+    flex:1;
+    min-height:0;
+    gap:4px;
+  }
+  .chat-history .label{
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+    color:rgba(239,239,231,0.4);
+    padding:0 6px 4px;
+    flex:none;
+  }
+  #historyList{
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+    overflow-y:auto;
+    min-height:0;
+  }
+  .history-item{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    background:transparent;
+    border:none;
+    color:rgba(239,239,231,0.78);
+    padding:9px 10px;
+    border-radius:var(--radius-sm);
+    font-size:13.5px;
+    cursor:pointer;
+    text-align:left;
+    width:100%;
+  }
+  .history-item span:first-child{
+    flex:1;
+    min-width:0;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .history-item:hover{background:var(--board-line);}
+  .history-item.active{background:var(--red);color:#fff;}
+  .history-item .del{
+    flex:none;
+    opacity:0;
+    background:none;
+    border:none;
+    color:rgba(239,239,231,0.6);
+    cursor:pointer;
+    font-size:12px;
+    padding:2px 5px;
+    border-radius:50%;
+    line-height:1;
+  }
+  .history-item:hover .del{opacity:1;}
+  .history-item.active .del{color:rgba(255,255,255,0.75);}
+  .history-item .del:hover{background:rgba(0,0,0,0.2);}
+  .history-empty{
+    font-size:12px;
+    color:rgba(239,239,231,0.35);
+    padding:6px 10px;
+  }
 
   /* mobile top bar */
   .mobile-bar{display:none;}
@@ -387,8 +455,20 @@
 
   /* ---------- Composer ---------- */
   .composer-wrap{
+    position:sticky;
+    bottom:0;
+    z-index:5;
     padding:14px 24px 20px;
-    background:linear-gradient(to top, var(--paper) 55%, rgba(243,244,238,0));
+    background:var(--paper);
+  }
+  .composer-wrap::before{
+    content:"";
+    position:absolute;
+    left:0;right:0;
+    top:-32px;
+    height:32px;
+    background:linear-gradient(to bottom, rgba(243,244,238,0), var(--paper) 90%);
+    pointer-events:none;
   }
   .composer{
     max-width:760px;
@@ -713,6 +793,11 @@
       </button>
     </div>
 
+    <div class="chat-history">
+      <div class="label">Verlauf</div>
+      <div id="historyList"></div>
+    </div>
+
     <div class="sidebar-footer">
       Antworten der KI können Fehler enthalten – <b>immer selbst nachdenken &amp; prüfen.</b><br><br>
       <a href="datenschutz.html" style="color: rgba(239,239,231,0.6); text-decoration: underline;">Datenschutz</a>
@@ -1008,6 +1093,148 @@
   let webSearchOn = false;
   let isStreaming = false;
 
+  /* ---------------- Chatverlauf (localStorage) ---------------- */
+  const historyListEl = document.getElementById('historyList');
+  const CHATS_STORAGE_KEY = 'schlaufuchs_chats_v1';
+  let chats = loadChatsFromStorage();
+  let currentChatId = null;
+
+  function loadChatsFromStorage(){
+    try {
+      const raw = localStorage.getItem(CHATS_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch(e){
+      return [];
+    }
+  }
+
+  function saveChatsToStorage(){
+    try {
+      localStorage.setItem(CHATS_STORAGE_KEY, JSON.stringify(chats));
+    } catch(e){
+      console.warn('Chatverlauf konnte nicht gespeichert werden (Speicher evtl. voll):', e);
+    }
+  }
+
+  function makeChatTitle(text, hasImages){
+    const t = (text || '').trim().replace(/\s+/g, ' ');
+    if (!t) return hasImages ? 'Bild gesendet' : 'Neuer Chat';
+    return t.length > 42 ? t.slice(0, 42) + '…' : t;
+  }
+
+  function switchToChatView(){
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    const chatBtn = document.querySelector('.mode-btn[data-view="chat"]');
+    if (chatBtn) chatBtn.classList.add('active');
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.getElementById('view-chat').classList.add('active');
+  }
+
+  function renderHistoryList(){
+    historyListEl.innerHTML = '';
+    if (chats.length === 0){
+      historyListEl.innerHTML = '<div class="history-empty">Noch keine gespeicherten Chats</div>';
+      return;
+    }
+    chats.slice().sort((a, b) => b.updatedAt - a.updatedAt).forEach(chat => {
+      const item = document.createElement('button');
+      item.className = 'history-item' + (chat.id === currentChatId ? ' active' : '');
+      item.innerHTML = `<span>${escapeHtml(chat.title)}</span><button class="del" title="Chat löschen" aria-label="Chat löschen">✕</button>`;
+      item.addEventListener('click', () => loadChat(chat.id));
+      item.querySelector('.del').addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteChat(chat.id);
+      });
+      historyListEl.appendChild(item);
+    });
+  }
+
+  function deleteChat(id){
+    chats = chats.filter(c => c.id !== id);
+    saveChatsToStorage();
+    if (currentChatId === id){
+      startNewChat();
+    } else {
+      renderHistoryList();
+    }
+  }
+
+  function getOrCreateCurrentChat(){
+    let chat = chats.find(c => c.id === currentChatId);
+    if (!chat){
+      chat = { id: 'c' + Date.now() + Math.random().toString(36).slice(2, 7), title: 'Neuer Chat', messages: [], updatedAt: Date.now() };
+      chats.push(chat);
+      currentChatId = chat.id;
+    }
+    return chat;
+  }
+
+  function persistMessage(role, data){
+    const chat = getOrCreateCurrentChat();
+    chat.messages.push({ role, ...data });
+    if (chat.messages.length === 1 && role === 'user'){
+      chat.title = makeChatTitle(data.text, data.images && data.images.length > 0);
+    }
+    chat.updatedAt = Date.now();
+    saveChatsToStorage();
+    renderHistoryList();
+  }
+
+  function startNewChat(){
+    if (isStreaming) return;
+    currentChatId = null;
+    history = [];
+    pendingImages = [];
+    renderAttachRow();
+    chatInner.innerHTML = '';
+    chatInner.appendChild(emptyState);
+    composerText.value = '';
+    autoResize();
+    renderHistoryList();
+    switchToChatView();
+    sidebar.classList.remove('open');
+    overlay.classList.remove('show');
+  }
+
+  function loadChat(id){
+    if (isStreaming || id === currentChatId) return;
+    const chat = chats.find(c => c.id === id);
+    if (!chat) return;
+
+    currentChatId = id;
+    history = [];
+    pendingImages = [];
+    renderAttachRow();
+    chatInner.innerHTML = '';
+
+    if (chat.messages.length === 0){
+      chatInner.appendChild(emptyState);
+    } else {
+      chat.messages.forEach(m => {
+        if (m.role === 'user'){
+          addUserMessageToDOM(m.text, m.images || []);
+          const content = [];
+          if (m.text) content.push({ type: 'text', text: m.text });
+          (m.images || []).forEach(src => content.push({ type: 'image_url', image_url: { url: src } }));
+          history.push({ role: 'user', content: content.length === 1 && content[0].type === 'text' ? m.text : content });
+        } else {
+          const ui = addAssistantSkeleton();
+          renderFinalAssistantMessage(ui, m.text || '_(keine Antwort erhalten)_');
+          history.push({ role: 'assistant', content: m.text || '' });
+        }
+      });
+    }
+
+    composerText.value = '';
+    autoResize();
+    renderHistoryList();
+    switchToChatView();
+    scrollToBottom();
+    sidebar.classList.remove('open');
+    overlay.classList.remove('show');
+  }
+
   document.querySelectorAll('.suggestion').forEach(btn => {
     btn.addEventListener('click', () => {
       composerText.value = btn.dataset.fill;
@@ -1071,16 +1298,9 @@
   });
   sendBtn.addEventListener('click', sendMessage);
 
-  document.getElementById('newChatBtn').addEventListener('click', () => {
-    if (isStreaming) return;
-    history = [];
-    pendingImages = [];
-    renderAttachRow();
-    chatInner.innerHTML = '';
-    chatInner.appendChild(emptyState);
-    composerText.value = '';
-    autoResize();
-  });
+  document.getElementById('newChatBtn').addEventListener('click', startNewChat);
+
+  renderHistoryList();
 
   function scrollToBottom(){
     chatScroll.scrollTop = chatScroll.scrollHeight;
@@ -1095,7 +1315,6 @@
       imagesHtml = `<div class="msg-images">${images.map(src => `<img src="${src}">`).join('')}</div>`;
     }
     msg.innerHTML = `
-      <div class="avatar">🙂</div>
       <div class="bubble-col">
         ${imagesHtml}
         <div class="bubble">${markdownLite(text)}</div>
@@ -1229,6 +1448,7 @@
 
     addUserMessageToDOM(text, imagesForThisMessage);
     history.push({ role: 'user', content: content.length === 1 && content[0].type === 'text' ? text : content });
+    persistMessage('user', { text, images: imagesForThisMessage });
 
     composerText.value = '';
     autoResize();
@@ -1301,6 +1521,7 @@
 
       renderFinalAssistantMessage(ui, assistantText || '_(keine Antwort erhalten)_');
       history.push({ role: 'assistant', content: assistantText });
+      persistMessage('assistant', { text: assistantText || '' });
 
     } catch (err){
       ui.root.remove();
