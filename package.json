@@ -1,0 +1,9 @@
+{
+  "name": "schlaufuchs-schul-ki",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Schul-KI-Assistent: Chat mit Bildanalyse, Hausaufgabenhilfe und Arbeitsblatt-Generator (PDF) auf Basis von OpenRouter.",
+  "dependencies": {
+    "pdf-lib": "^1.17.1"
+  }
+}
