@@ -138,13 +138,28 @@
   /* mobile top bar */
   .mobile-bar{display:none;}
 
+  /* Overlay muss IMMER (nicht nur in der Mobile-Media-Query) aus dem
+     Grid-Fluss genommen werden. Sonst zählt der leere <div class="overlay">
+     auf großen Bildschirmen als drittes Grid-Item und Sidebar/Main
+     rutschen in die falschen Spalten/Zeilen. */
+  .overlay{
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,0.35);
+    z-index:35;
+    display:none;
+  }
+  .overlay.show{display:block;}
+
   /* ---------- Main ---------- */
   .main{
     position:relative;
     display:flex;
     flex-direction:column;
     min-width:0;
+    width:100%;
     height:100vh;
+    overflow:hidden;
   }
   .view{
     display:none;
@@ -269,8 +284,54 @@
     margin:8px 0;
   }
   .bubble pre code{background:none;padding:0;}
-  .bubble h4{margin:4px 0 6px;font-size:15.5px;}
+  .bubble h1{margin:12px 0 8px;font-size:19px;}
+  .bubble h2{margin:10px 0 7px;font-size:17px;}
+  .bubble h3{margin:8px 0 6px;font-size:15.5px;}
+  .bubble h4,.bubble h5,.bubble h6{margin:6px 0 6px;font-size:15px;}
+  .bubble h1:first-child,.bubble h2:first-child,.bubble h3:first-child,.bubble h4:first-child{margin-top:0;}
   .bubble strong{font-weight:700;}
+  .bubble hr{border:none;border-top:1px solid var(--paper-line);margin:14px 0;}
+  .bubble blockquote{
+    margin:8px 0;
+    padding:2px 14px;
+    border-left:3px solid var(--red);
+    color:var(--muted);
+    font-style:italic;
+  }
+  .bubble blockquote p{margin:0 0 4px;}
+  .bubble a{color:var(--red);text-decoration:underline;}
+  .msg.user .bubble a{color:#fff;}
+
+  /* ---------- PDF-Karte im Chat ---------- */
+  .pdf-card{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    border:1px solid var(--paper-line);
+    background:var(--paper);
+    border-radius:var(--radius-md);
+    padding:12px 14px;
+    margin:8px 0;
+  }
+  .pdf-card-icon{font-size:22px;flex:none;}
+  .pdf-card-main{flex:1;min-width:0;}
+  .pdf-card-title{font-weight:700;font-size:14px;color:var(--ink);word-break:break-word;}
+  .pdf-card-status{font-size:12.5px;color:var(--muted);}
+  .pdf-card.ready{border-color:#6FAE8E;background:#F2F8F5;}
+  .pdf-card.error{border-color:#F1C7C2;background:var(--red-tint);}
+  .pdf-card.error .pdf-card-status{color:var(--red-dark);}
+  .pdf-card-download{
+    flex:none;
+    background:var(--ink);
+    color:#fff;
+    border-radius:999px;
+    padding:8px 16px;
+    font-size:12.5px;
+    font-weight:700;
+    text-decoration:none;
+    white-space:nowrap;
+  }
+  .pdf-card-download:hover{background:#0f1712;}
 
   .msg-images{display:flex;gap:6px;flex-wrap:wrap;}
   .msg-images img{
@@ -602,11 +663,6 @@
       width:auto;
     }
     .sidebar.open{transform:translateX(0);}
-    .overlay{
-      position:fixed;inset:0;background:rgba(0,0,0,0.35);
-      z-index:35;display:none;
-    }
-    .overlay.show{display:block;}
     .mobile-bar{
       display:flex;
       align-items:center;
@@ -827,44 +883,101 @@
 
   function inlineFormat(text){
     text = text.replace(/`([^`]+)`/g, (m,c) => `<code>${c}</code>`);
+    text = text.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
     text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
     text = text.replace(/(^|[^*])\*([^*\n]+)\*([^*]|$)/g, '$1<em>$2</em>$3');
     return text;
   }
 
+  // Wandelt eine begrenzte Teilmenge von Markdown in HTML um. Robust gegen
+  // typische KI-Ausgaben: Überschriften jeder Ebene (# bis ######),
+  // Trennlinien (---, ***, ___), Zitate (> ...), Listen, Codeblöcke
+  // (auch mit Leerzeilen im Inneren) sowie Inline-Formatierung.
   function markdownLite(raw){
-    const escaped = escapeHtml(raw || '');
+    const source = raw || '';
+
+    // 1) Codeblöcke zuerst herauslösen, damit Leerzeilen darin die
+    //    Absatz-Erkennung nicht durcheinanderbringen.
+    const codeBlocks = [];
+    const withPlaceholders = source.replace(/```(\w*)\n?([\s\S]*?)```/g, (m, lang, code) => {
+      codeBlocks.push(code.replace(/\n$/, ''));
+      return `\n\n\u0000CB${codeBlocks.length - 1}\u0000\n\n`;
+    });
+
+    const escaped = escapeHtml(withPlaceholders);
     const blocks = escaped.split(/\n{2,}/);
     let html = '';
+
     for (let block of blocks){
       block = block.trim();
       if (!block) continue;
 
-      const codeMatch = block.match(/^```(\w*)\n([\s\S]*?)```$/);
+      const codeMatch = block.match(/^\u0000CB(\d+)\u0000$/);
       if (codeMatch){
-        html += `<pre><code>${codeMatch[2]}</code></pre>`;
+        html += `<pre><code>${escapeHtml(codeBlocks[Number(codeMatch[1])])}</code></pre>`;
         continue;
       }
 
-      const headingMatch = block.match(/^###\s+(.*)$/);
-      if (headingMatch){
-        html += `<h4>${inlineFormat(headingMatch[1])}</h4>`;
+      if (/^(-{3,}|\*{3,}|_{3,})$/.test(block)){
+        html += '<hr>';
         continue;
       }
 
       const lines = block.split('\n');
+
+      const headingMatch = lines[0].match(/^(#{1,6})\s+(.*)$/);
+      if (headingMatch){
+        const level = headingMatch[1].length;
+        html += `<h${level}>${inlineFormat(headingMatch[2])}</h${level}>`;
+        const rest = lines.slice(1).join('\n').trim();
+        if (rest) html += `<p>${inlineFormat(rest).replace(/\n/g, '<br>')}</p>`;
+        continue;
+      }
+
+      // Hinweis: block ist an dieser Stelle bereits escaped, ">" ist also "&gt;".
+      const isQuote = lines.every(l => /^\s*&gt;\s?/.test(l));
+      if (isQuote){
+        const quoted = lines.map(l => l.replace(/^\s*&gt;\s?/, '')).join('\n');
+        html += `<blockquote><p>${inlineFormat(quoted).replace(/\n/g, '<br>')}</p></blockquote>`;
+        continue;
+      }
+
       const isUl = lines.every(l => /^\s*[-*]\s+/.test(l));
-      const isOl = lines.every(l => /^\s*\d+\.\s+/.test(l));
+      const isOl = lines.every(l => /^\s*\d+[.)]\s+/.test(l));
 
       if (isUl){
         html += '<ul>' + lines.map(l => `<li>${inlineFormat(l.replace(/^\s*[-*]\s+/, ''))}</li>`).join('') + '</ul>';
       } else if (isOl){
-        html += '<ol>' + lines.map(l => `<li>${inlineFormat(l.replace(/^\s*\d+\.\s+/, ''))}</li>`).join('') + '</ol>';
+        html += '<ol>' + lines.map(l => `<li>${inlineFormat(l.replace(/^\s*\d+[.)]\s+/, ''))}</li>`).join('') + '</ol>';
       } else {
         html += `<p>${inlineFormat(block).replace(/\n/g, '<br>')}</p>`;
       }
     }
     return html || '<p></p>';
+  }
+
+  // Extrahiert ```pdf-Codeblöcke (JSON mit {title, content}) aus einem
+  // Antworttext, damit sie separat als Download-Karte gerendert werden
+  // können statt als rohes JSON im Chat zu erscheinen.
+  function extractPdfBlocks(text){
+    const pdfBlocks = [];
+    const cleaned = String(text || '').replace(/```pdf\s*\n([\s\S]*?)```/g, (m, body) => {
+      let data = null;
+      const trimmed = body.trim();
+      try {
+        data = JSON.parse(trimmed);
+      } catch (e){
+        // Falls die KI kein sauberes JSON liefert: Inhalt trotzdem als PDF versuchen.
+        data = { title: 'Dokument', content: trimmed };
+      }
+      if (!data || typeof data.content !== 'string' || !data.content.trim()){
+        data = null;
+      }
+      const idx = pdfBlocks.length;
+      pdfBlocks.push(data);
+      return `\n\n\u0000PDFCARD${idx}\u0000\n\n`;
+    });
+    return { cleaned, pdfBlocks };
   }
 
   /* ---------------- Chat state ---------------- */
@@ -1003,6 +1116,86 @@
     };
   }
 
+  // Rendert die fertige Assistant-Antwort: normaler Text via markdownLite,
+  // ```pdf-Blöcke werden durch eine Karte ersetzt, die den PDF-Download anstößt.
+  function renderFinalAssistantMessage(ui, text){
+    const { cleaned, pdfBlocks } = extractPdfBlocks(text);
+    let html = markdownLite(cleaned);
+    const cardIds = [];
+
+    pdfBlocks.forEach((data, idx) => {
+      const marker = `\u0000PDFCARD${idx}\u0000`;
+      const cardId = `pdfcard-${Date.now()}-${idx}-${Math.random().toString(36).slice(2,7)}`;
+      cardIds[idx] = cardId;
+      const cardHtml = data
+        ? `<div class="pdf-card" id="${cardId}">
+             <div class="pdf-card-icon">📄</div>
+             <div class="pdf-card-main">
+               <div class="pdf-card-title">${escapeHtml(data.title || 'Dokument')}</div>
+               <div class="pdf-card-status">PDF wird erstellt…</div>
+             </div>
+           </div>`
+        : `<div class="error-note">⚠️ Das PDF konnte nicht gelesen werden.</div>`;
+
+      const wrappedInP = new RegExp(`<p>\\s*${marker}\\s*</p>`);
+      if (wrappedInP.test(html)){
+        html = html.replace(wrappedInP, cardHtml);
+      } else {
+        html = html.split(marker).join(cardHtml);
+      }
+    });
+
+    ui.bubble.innerHTML = html;
+
+    pdfBlocks.forEach((data, idx) => {
+      if (data) requestPdfForCard(cardIds[idx], data);
+    });
+  }
+
+  function slugifyClient(text){
+    return (
+      String(text || '')
+        .toLowerCase()
+        .replace(/[äöüß]/g, m => ({ ä:'ae', ö:'oe', ü:'ue', ß:'ss' }[m]))
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, '') || 'dokument'
+    );
+  }
+
+  async function requestPdfForCard(cardId, data){
+    const cardEl = document.getElementById(cardId);
+    if (!cardEl) return;
+    try {
+      const res = await fetch('/api/generate-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: data.title, content: data.content }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'PDF-Erstellung fehlgeschlagen.');
+
+      const blob = base64ToBlob(json.pdfBase64, 'application/pdf');
+      const url = URL.createObjectURL(blob);
+      cardEl.classList.add('ready');
+      cardEl.innerHTML = `
+        <div class="pdf-card-icon">📄</div>
+        <div class="pdf-card-main">
+          <div class="pdf-card-title">${escapeHtml(json.title || data.title || 'Dokument')}</div>
+          <div class="pdf-card-status">PDF bereit</div>
+        </div>
+        <a class="pdf-card-download" href="${url}" download="${escapeHtml(json.filename || (slugifyClient(data.title) + '.pdf'))}">Herunterladen</a>
+      `;
+    } catch (err){
+      cardEl.classList.add('error');
+      cardEl.innerHTML = `
+        <div class="pdf-card-icon">⚠️</div>
+        <div class="pdf-card-main">
+          <div class="pdf-card-title">${escapeHtml(data.title || 'Dokument')}</div>
+          <div class="pdf-card-status">${escapeHtml(err.message)}</div>
+        </div>`;
+    }
+  }
+
   function addErrorToDOM(text){
     if (emptyState.parentElement) emptyState.remove();
     const msg = document.createElement('div');
@@ -1096,9 +1289,7 @@
         scrollToBottom();
       }
 
-      if (!gotFirstToken){
-        ui.bubble.innerHTML = markdownLite(assistantText || '_(keine Antwort erhalten)_');
-      }
+      renderFinalAssistantMessage(ui, assistantText || '_(keine Antwort erhalten)_');
       history.push({ role: 'assistant', content: assistantText });
 
     } catch (err){
