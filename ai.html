@@ -435,6 +435,118 @@
   }
   .pdf-card-download:hover{background:#0f1712;}
 
+  /* ---------- Auswahl-Karte (interaktive Fragen mit Buttons) ---------- */
+  .choice-card{
+    background:var(--board);
+    color:var(--board-text);
+    border-radius:var(--radius-lg);
+    padding:18px 18px 14px;
+    margin:10px 0;
+    box-shadow:var(--shadow);
+    max-width:100%;
+  }
+  .choice-card-head{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:12px;
+    margin-bottom:8px;
+  }
+  .choice-card-question{
+    font-size:15.5px;
+    font-weight:600;
+    line-height:1.4;
+    color:#fff;
+  }
+  .choice-card-close{
+    flex:none;
+    background:none;
+    border:none;
+    color:rgba(239,239,231,0.5);
+    font-size:15px;
+    cursor:pointer;
+    padding:2px 4px;
+    line-height:1;
+    border-radius:4px;
+  }
+  .choice-card-close:hover{color:rgba(239,239,231,0.9);}
+  .choice-card-options{
+    display:flex;
+    flex-direction:column;
+  }
+  .choice-option{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    width:100%;
+    background:none;
+    border:none;
+    border-top:1px solid var(--board-line);
+    color:var(--board-text);
+    padding:11px 2px;
+    font-size:14.5px;
+    font-weight:500;
+    text-align:left;
+    cursor:pointer;
+  }
+  .choice-option:first-child{border-top:none;}
+  .choice-option:hover:not(:disabled){color:var(--yellow);}
+  .choice-num{
+    flex:none;
+    width:22px;height:22px;
+    border-radius:50%;
+    background:rgba(255,255,255,0.08);
+    display:flex;align-items:center;justify-content:center;
+    font-size:12px;
+    font-weight:700;
+    color:rgba(239,239,231,0.75);
+  }
+  .choice-card-custom{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin-top:10px;
+    padding-top:12px;
+    border-top:1px solid var(--board-line);
+  }
+  .choice-card-input{
+    flex:1;
+    min-width:0;
+    background:none;
+    border:none;
+    color:var(--board-text);
+    font-size:14px;
+    padding:6px 2px;
+    outline:none;
+  }
+  .choice-card-input::placeholder{color:rgba(239,239,231,0.4);}
+  .choice-card-send{
+    flex:none;
+    width:34px;height:34px;
+    border-radius:50%;
+    background:var(--red);
+    color:#fff;
+    border:none;
+    display:flex;align-items:center;justify-content:center;
+    cursor:pointer;
+  }
+  .choice-card-send:hover{background:var(--red-dark);}
+  .choice-card-send:disabled{opacity:.5;cursor:default;}
+  .choice-card-chosen{
+    margin-top:10px;
+    padding-top:12px;
+    border-top:1px solid var(--board-line);
+    font-size:13px;
+    color:var(--yellow);
+    font-weight:600;
+  }
+  .choice-card.answered .choice-option,
+  .choice-card.dismissed .choice-option{opacity:.4;}
+  .choice-card.answered .choice-card-custom,
+  .choice-card.dismissed .choice-card-custom{display:none;}
+  .choice-card.dismissed{opacity:.55;}
+  .choice-card button:disabled{cursor:default;}
+
   .msg-images{display:flex;gap:6px;flex-wrap:wrap;}
   .msg-images img{
     width:96px;height:96px;object-fit:cover;
@@ -1197,6 +1309,132 @@
     return { cleaned, pdfBlocks };
   }
 
+  // Extrahiert ```choice-Codeblöcke aus einem Antworttext, damit sie als
+  // interaktive Karte mit anklickbaren Buttons gerendert werden können,
+  // statt als Rohtext im Chat zu erscheinen. Ebenfalls bewusst KEIN JSON,
+  // aus denselben Gründen wie beim pdf-Block. Format:
+  //   Frage: <Frage>
+  //   1. <Option>
+  //   2. <Option>
+  //   ...
+  // Es dürfen mehrere choice-Blöcke in einer Antwort vorkommen (mehrere
+  // Fragen nacheinander).
+  function parseChoiceBlockBody(body){
+    const raw = String(body || '').replace(/^\n+/, '').replace(/\n+$/, '');
+    if (!raw.trim()) return null;
+    const lines = raw.split('\n').map(l => l.trim()).filter(l => l !== '');
+    if (!lines.length) return null;
+
+    const questionMatch = lines[0].match(/^Frage\s*:\s*(.+)$/i);
+    const question = (questionMatch ? questionMatch[1] : lines[0]).trim();
+    const optionLines = questionMatch ? lines.slice(1) : lines.slice(1);
+
+    const options = [];
+    optionLines.forEach(line => {
+      const m = line.match(/^\d+[.)]\s+(.+)$/);
+      if (m){
+        const opt = m[1].trim();
+        if (opt) options.push(opt);
+      }
+    });
+
+    if (!options.length) return null;
+    return { question: question || 'Wähle eine Option:', options: options.slice(0, 6) };
+  }
+
+  function extractChoiceBlocks(text){
+    const choiceBlocks = [];
+    const cleaned = String(text || '').replace(/```choice\s*\n([\s\S]*?)```/g, (m, body) => {
+      const data = parseChoiceBlockBody(body);
+      const idx = choiceBlocks.length;
+      choiceBlocks.push(data);
+      return `\n\n\u0000CHOICECARD${idx}\u0000\n\n`;
+    });
+    return { cleaned, choiceBlocks };
+  }
+
+  function buildChoiceCardHtml(cardId, data){
+    const optionsHtml = data.options.map((opt, i) => `
+      <button type="button" class="choice-option" data-choice-text="${escapeHtml(opt)}">
+        <span class="choice-num">${i + 1}</span>
+        <span class="choice-label">${escapeHtml(opt)}</span>
+      </button>`).join('');
+
+    return `
+      <div class="choice-card" id="${cardId}">
+        <div class="choice-card-head">
+          <div class="choice-card-question">${escapeHtml(data.question)}</div>
+          <button type="button" class="choice-card-close" data-choice-close aria-label="Frage schließen">✕</button>
+        </div>
+        <div class="choice-card-options">${optionsHtml}</div>
+        <div class="choice-card-custom">
+          <input type="text" class="choice-card-input" data-choice-input placeholder="Eigene Antwort eingeben…" />
+          <button type="button" class="choice-card-send" data-choice-send aria-label="Antwort senden">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+          </button>
+        </div>
+      </div>`;
+  }
+
+  // Verdrahtet eine bereits ins DOM eingefügte Auswahl-Karte: Klick auf eine
+  // Option ODER eigene Antwort abschicken sendet den Text 1:1 wie eine
+  // normale Chat-Nachricht. Das "✕" schließt die Karte, ohne etwas zu senden.
+  function attachChoiceCard(cardId){
+    const card = document.getElementById(cardId);
+    if (!card) return;
+
+    const finish = (text) => {
+      const clean = String(text || '').trim();
+      if (!clean || card.classList.contains('answered') || card.classList.contains('dismissed')) return;
+      card.classList.add('answered');
+      card.querySelectorAll('button').forEach(b => b.disabled = true);
+      const input = card.querySelector('[data-choice-input]');
+      if (input) input.disabled = true;
+      const chosen = document.createElement('div');
+      chosen.className = 'choice-card-chosen';
+      chosen.textContent = '✓ ' + clean;
+      card.appendChild(chosen);
+      sendChoiceAnswer(clean);
+    };
+
+    card.querySelectorAll('.choice-option').forEach(btn => {
+      btn.addEventListener('click', () => finish(btn.dataset.choiceText));
+    });
+
+    const closeBtn = card.querySelector('[data-choice-close]');
+    if (closeBtn){
+      closeBtn.addEventListener('click', () => {
+        if (card.classList.contains('answered')) return;
+        card.classList.add('dismissed');
+        card.querySelectorAll('button, input').forEach(el => el.disabled = true);
+      });
+    }
+
+    const input = card.querySelector('[data-choice-input]');
+    const sendBtnEl = card.querySelector('[data-choice-send]');
+    const submitCustom = () => { if (input) finish(input.value); };
+    if (sendBtnEl) sendBtnEl.addEventListener('click', submitCustom);
+    if (input){
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.isComposing){
+          e.preventDefault();
+          submitCustom();
+        }
+      });
+    }
+  }
+
+  // Schickt die per Klick/eigener Antwort gewählte Auswahl als ganz normale
+  // Nutzer-Nachricht ab (gleicher Ablauf wie sendMessage, aber ohne den
+  // Haupt-Composer bzw. eventuell angehängte Bilder zu beeinflussen).
+  async function sendChoiceAnswer(text){
+    if (isStreaming) return;
+    addUserMessageToDOM(text, []);
+    history.push({ role: 'user', content: text });
+    persistMessage('user', { text, images: [] });
+    await requestAssistantReply();
+  }
+
   /* ---------------- Chat state ---------------- */
   const chatInner = document.getElementById('chatInner');
   const chatScroll = document.getElementById('chatScroll');
@@ -1470,9 +1708,11 @@
   // Rendert die fertige Assistant-Antwort: normaler Text via markdownLite,
   // ```pdf-Blöcke werden durch eine Karte ersetzt, die den PDF-Download anstößt.
   function renderFinalAssistantMessage(ui, text){
-    const { cleaned, pdfBlocks } = extractPdfBlocks(text);
+    const { cleaned: afterPdf, pdfBlocks } = extractPdfBlocks(text);
+    const { cleaned, choiceBlocks } = extractChoiceBlocks(afterPdf);
     let html = markdownLite(cleaned);
     const cardIds = [];
+    const choiceCardIds = [];
 
     pdfBlocks.forEach((data, idx) => {
       const marker = `\u0000PDFCARD${idx}\u0000`;
@@ -1496,10 +1736,29 @@
       }
     });
 
+    choiceBlocks.forEach((data, idx) => {
+      const marker = `\u0000CHOICECARD${idx}\u0000`;
+      const cardId = `choicecard-${Date.now()}-${idx}-${Math.random().toString(36).slice(2,7)}`;
+      choiceCardIds[idx] = cardId;
+      const cardHtml = data
+        ? buildChoiceCardHtml(cardId, data)
+        : `<div class="error-note">⚠️ Die Auswahl konnte nicht gelesen werden.</div>`;
+
+      const wrappedInP = new RegExp(`<p>\\s*${marker}\\s*</p>`);
+      if (wrappedInP.test(html)){
+        html = html.replace(wrappedInP, cardHtml);
+      } else {
+        html = html.split(marker).join(cardHtml);
+      }
+    });
+
     ui.bubble.innerHTML = html;
 
     pdfBlocks.forEach((data, idx) => {
       if (data) requestPdfForCard(cardIds[idx], data);
+    });
+    choiceBlocks.forEach((data, idx) => {
+      if (data) attachChoiceCard(choiceCardIds[idx]);
     });
   }
 
