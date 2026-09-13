@@ -956,23 +956,33 @@
     return html || '<p></p>';
   }
 
-  // Extrahiert ```pdf-Codeblöcke (JSON mit {title, content}) aus einem
-  // Antworttext, damit sie separat als Download-Karte gerendert werden
-  // können statt als rohes JSON im Chat zu erscheinen.
+  // Extrahiert ```pdf-Codeblöcke aus einem Antworttext, damit sie separat
+  // als Download-Karte gerendert werden können statt als Rohtext im Chat
+  // zu erscheinen. Bewusst KEIN JSON: gerade kleinere/kostenlose Modelle
+  // verschachteln Anführungszeichen und Zeilenumbrüche darin zuverlässig
+  // falsch. Stattdessen ein simples, robustes Format:
+  //   Titel: <Titel>
+  //   ===
+  //   <Inhalt als Markdown>
+  function parsePdfBlockBody(body){
+    const raw = String(body || '').replace(/^\n+/, '').replace(/\n+$/, '');
+    if (!raw.trim()) return null;
+    const lines = raw.split('\n');
+    const titleMatch = lines[0] && lines[0].match(/^\s*Titel\s*:\s*(.+)$/i);
+    if (titleMatch && lines[1] && /^\s*={3,}\s*$/.test(lines[1])){
+      const title = titleMatch[1].trim().replace(/^["']|["']$/g, '');
+      const content = lines.slice(2).join('\n').trim();
+      if (content) return { title: title || 'Dokument', content };
+    }
+    // Fallback: Format nicht exakt eingehalten - trotzdem den gesamten
+    // Text als Inhalt nehmen, statt die Antwort komplett zu verwerfen.
+    return { title: 'Dokument', content: raw.trim() };
+  }
+
   function extractPdfBlocks(text){
     const pdfBlocks = [];
     const cleaned = String(text || '').replace(/```pdf\s*\n([\s\S]*?)```/g, (m, body) => {
-      let data = null;
-      const trimmed = body.trim();
-      try {
-        data = JSON.parse(trimmed);
-      } catch (e){
-        // Falls die KI kein sauberes JSON liefert: Inhalt trotzdem als PDF versuchen.
-        data = { title: 'Dokument', content: trimmed };
-      }
-      if (!data || typeof data.content !== 'string' || !data.content.trim()){
-        data = null;
-      }
+      const data = parsePdfBlockBody(body);
       const idx = pdfBlocks.length;
       pdfBlocks.push(data);
       return `\n\n\u0000PDFCARD${idx}\u0000\n\n`;
