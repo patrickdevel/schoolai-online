@@ -373,6 +373,37 @@
   .bubble a{color:var(--red);text-decoration:underline;}
   .msg.user .bubble a{color:#fff;}
 
+  .bubble .table-wrap{
+    overflow-x:auto;
+    margin:10px 0;
+    border:1px solid var(--paper-line);
+    border-radius:var(--radius-sm);
+  }
+  .bubble table{
+    border-collapse:collapse;
+    width:100%;
+    font-size:14px;
+  }
+  .bubble th,.bubble td{
+    padding:8px 12px;
+    text-align:left;
+    border-bottom:1px solid var(--paper-line);
+    border-right:1px solid var(--paper-line);
+    white-space:nowrap;
+  }
+  .bubble th:last-child,.bubble td:last-child{border-right:none;}
+  .bubble tr:last-child td{border-bottom:none;}
+  .bubble th{
+    background:var(--paper);
+    font-weight:700;
+    color:var(--ink);
+  }
+  .bubble tbody tr:nth-child(even){background:rgba(0,0,0,0.02);}
+  .msg.user .bubble .table-wrap{border-color:rgba(255,255,255,0.25);}
+  .msg.user .bubble th,.msg.user .bubble td{border-color:rgba(255,255,255,0.18);}
+  .msg.user .bubble th{background:rgba(255,255,255,0.08);color:#fff;}
+  .msg.user .bubble tbody tr:nth-child(even){background:rgba(255,255,255,0.04);}
+
   /* ---------- PDF-Karte im Chat ---------- */
   .pdf-card{
     display:flex;
@@ -994,6 +1025,37 @@
     return text;
   }
 
+  // Erzwingt Leerzeilen vor/nach Markdown-Tabellen, auch wenn die KI direkt
+  // ohne Absatz davor ("Hier eine Tabelle:\n| A | B |\n|-|-|\n...") in die
+  // Tabelle springt. Sonst würde die Tabellenzeile mit dem Satz davor in
+  // einem gemeinsamen Absatz-Block landen und nicht als Tabelle erkannt.
+  function isolateTables(text){
+    const lines = text.split('\n');
+    const sepRe = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+    const out = [];
+    let i = 0;
+    while (i < lines.length){
+      const line = lines[i];
+      const next = lines[i + 1];
+      const looksLikeHeaderRow = line.includes('|') && line.trim() !== '' && !sepRe.test(line);
+      const looksLikeSepRow = next !== undefined && sepRe.test(next) && next.includes('-');
+      if (looksLikeHeaderRow && looksLikeSepRow){
+        if (out.length && out[out.length - 1].trim() !== '') out.push('');
+        out.push(line, next);
+        i += 2;
+        while (i < lines.length && lines[i].includes('|') && lines[i].trim() !== ''){
+          out.push(lines[i]);
+          i++;
+        }
+        if (i < lines.length && lines[i].trim() !== '') out.push('');
+        continue;
+      }
+      out.push(line);
+      i++;
+    }
+    return out.join('\n');
+  }
+
   // Wandelt eine begrenzte Teilmenge von Markdown in HTML um. Robust gegen
   // typische KI-Ausgaben: Überschriften jeder Ebene (# bis ######),
   // Trennlinien (---, ***, ___), Zitate (> ...), Listen, Codeblöcke
@@ -1009,7 +1071,7 @@
       return `\n\n\u0000CB${codeBlocks.length - 1}\u0000\n\n`;
     });
 
-    const escaped = escapeHtml(withPlaceholders);
+    const escaped = isolateTables(escapeHtml(withPlaceholders));
     const blocks = escaped.split(/\n{2,}/);
     let html = '';
 
@@ -1036,6 +1098,46 @@
         html += `<h${level}>${inlineFormat(headingMatch[2])}</h${level}>`;
         const rest = lines.slice(1).join('\n').trim();
         if (rest) html += `<p>${inlineFormat(rest).replace(/\n/g, '<br>')}</p>`;
+        continue;
+      }
+
+      // Markdown-Tabellen: Kopfzeile | Trennzeile (---|---) | Datenzeilen.
+      const isTable = lines.length >= 2
+        && /^\s*\|?.+\|.*\|?\s*$/.test(lines[0])
+        && /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(lines[1]);
+      if (isTable){
+        const parseRow = (line) => {
+          let l = line.trim();
+          if (l.startsWith('|')) l = l.slice(1);
+          if (l.endsWith('|')) l = l.slice(0, -1);
+          return l.split('|').map(c => c.trim());
+        };
+        const headerCells = parseRow(lines[0]);
+        const aligns = parseRow(lines[1]).map(c => {
+          const left = c.startsWith(':'), right = c.endsWith(':');
+          if (left && right) return 'center';
+          if (right) return 'right';
+          if (left) return 'left';
+          return '';
+        });
+        const bodyRows = lines.slice(2).filter(l => l.trim()).map(parseRow);
+
+        let tableHtml = '<div class="table-wrap"><table><thead><tr>';
+        headerCells.forEach((cell, i) => {
+          const style = aligns[i] ? ` style="text-align:${aligns[i]}"` : '';
+          tableHtml += `<th${style}>${inlineFormat(cell)}</th>`;
+        });
+        tableHtml += '</tr></thead><tbody>';
+        bodyRows.forEach(row => {
+          tableHtml += '<tr>';
+          headerCells.forEach((_, i) => {
+            const style = aligns[i] ? ` style="text-align:${aligns[i]}"` : '';
+            tableHtml += `<td${style}>${inlineFormat(row[i] || '')}</td>`;
+          });
+          tableHtml += '</tr>';
+        });
+        tableHtml += '</tbody></table></div>';
+        html += tableHtml;
         continue;
       }
 
@@ -1557,9 +1659,17 @@
         scrollToBottom();
       }
 
-      renderFinalAssistantMessage(ui, assistantText || '_(keine Antwort erhalten)_');
-      history.push({ role: 'assistant', content: assistantText });
-      persistMessage('assistant', { text: assistantText || '' });
+      if (!assistantText.trim()){
+        // Leere Antwort (z. B. durch Sicherheitsfilter des Modells/Providers
+        // blockiert) wird wie ein Fehler behandelt, inkl. "Erneut versuchen"-
+        // Button, statt als leere Chat-Nachricht angezeigt zu werden.
+        ui.root.remove();
+        addErrorToDOM('Die KI hat keine Antwort geliefert – möglicherweise wurde die Anfrage durch einen Sicherheitsfilter blockiert.', requestAssistantReply);
+      } else {
+        renderFinalAssistantMessage(ui, assistantText);
+        history.push({ role: 'assistant', content: assistantText });
+        persistMessage('assistant', { text: assistantText });
+      }
 
     } catch (err){
       ui.root.remove();
