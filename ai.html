@@ -435,31 +435,32 @@
   }
   .pdf-card-download:hover{background:#0f1712;}
 
-  /* ---------- Auswahl-Karte (interaktive Fragen mit Buttons) ---------- */
-  .choice-card{
+  /* ---------- Quiz-Panel (KI-Fragen übernehmen den Composer) ---------- */
+  .quiz-panel{
+    display:none;
+    flex-direction:column;
+    max-width:760px;
+    margin:0 auto;
     background:var(--board);
     color:var(--board-text);
     border-radius:var(--radius-lg);
-    padding:18px 18px 14px;
-    margin:10px 0;
     box-shadow:var(--shadow);
-    max-width:100%;
+    padding:16px 18px 14px;
   }
-  .choice-card-head{
+  .quiz-panel-top{
     display:flex;
-    align-items:flex-start;
+    align-items:center;
     justify-content:space-between;
-    gap:12px;
-    margin-bottom:8px;
+    margin-bottom:10px;
   }
-  .choice-card-question{
-    font-size:15.5px;
-    font-weight:600;
-    line-height:1.4;
-    color:#fff;
+  .quiz-progress{
+    font-size:11.5px;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    color:var(--yellow);
   }
-  .choice-card-close{
-    flex:none;
+  .quiz-cancel{
     background:none;
     border:none;
     color:rgba(239,239,231,0.5);
@@ -469,12 +470,19 @@
     line-height:1;
     border-radius:4px;
   }
-  .choice-card-close:hover{color:rgba(239,239,231,0.9);}
-  .choice-card-options{
+  .quiz-cancel:hover{color:rgba(239,239,231,0.9);}
+  .quiz-question{
+    font-size:16px;
+    font-weight:600;
+    color:#fff;
+    line-height:1.4;
+    margin-bottom:6px;
+  }
+  .quiz-options{
     display:flex;
     flex-direction:column;
   }
-  .choice-option{
+  .quiz-option{
     display:flex;
     align-items:center;
     gap:12px;
@@ -489,9 +497,9 @@
     text-align:left;
     cursor:pointer;
   }
-  .choice-option:first-child{border-top:none;}
-  .choice-option:hover:not(:disabled){color:var(--yellow);}
-  .choice-num{
+  .quiz-option:first-child{border-top:none;}
+  .quiz-option:hover{color:var(--yellow);}
+  .quiz-option-num{
     flex:none;
     width:22px;height:22px;
     border-radius:50%;
@@ -501,7 +509,7 @@
     font-weight:700;
     color:rgba(239,239,231,0.75);
   }
-  .choice-card-custom{
+  .quiz-custom-row{
     display:flex;
     align-items:center;
     gap:8px;
@@ -509,7 +517,7 @@
     padding-top:12px;
     border-top:1px solid var(--board-line);
   }
-  .choice-card-input{
+  .quiz-custom-row input{
     flex:1;
     min-width:0;
     background:none;
@@ -519,8 +527,8 @@
     padding:6px 2px;
     outline:none;
   }
-  .choice-card-input::placeholder{color:rgba(239,239,231,0.4);}
-  .choice-card-send{
+  .quiz-custom-row input::placeholder{color:rgba(239,239,231,0.4);}
+  .quiz-send-btn{
     flex:none;
     width:34px;height:34px;
     border-radius:50%;
@@ -530,22 +538,7 @@
     display:flex;align-items:center;justify-content:center;
     cursor:pointer;
   }
-  .choice-card-send:hover{background:var(--red-dark);}
-  .choice-card-send:disabled{opacity:.5;cursor:default;}
-  .choice-card-chosen{
-    margin-top:10px;
-    padding-top:12px;
-    border-top:1px solid var(--board-line);
-    font-size:13px;
-    color:var(--yellow);
-    font-weight:600;
-  }
-  .choice-card.answered .choice-option,
-  .choice-card.dismissed .choice-option{opacity:.4;}
-  .choice-card.answered .choice-card-custom,
-  .choice-card.dismissed .choice-card-custom{display:none;}
-  .choice-card.dismissed{opacity:.55;}
-  .choice-card button:disabled{cursor:default;}
+  .quiz-send-btn:hover{background:var(--red-dark);}
 
   .msg-images{display:flex;gap:6px;flex-wrap:wrap;}
   .msg-images img{
@@ -1003,7 +996,7 @@
       </div>
 
       <div class="composer-wrap">
-        <div class="composer">
+        <div class="composer" id="composerBox">
           <div class="attach-row" id="attachRow" style="display:none;"></div>
           <div class="composer-input-row">
             <button class="icon-btn" id="attachBtn" title="Bild anhängen" aria-label="Bild anhängen">
@@ -1026,6 +1019,22 @@
             </button>
           </div>
         </div>
+
+        <div class="quiz-panel" id="quizPanel">
+          <div class="quiz-panel-top">
+            <span class="quiz-progress" id="quizProgress">Frage 1 von 1</span>
+            <button type="button" class="quiz-cancel" id="quizCancelBtn" aria-label="Fragen abbrechen">✕</button>
+          </div>
+          <div class="quiz-question" id="quizQuestion"></div>
+          <div class="quiz-options" id="quizOptions"></div>
+          <div class="quiz-custom-row">
+            <input type="text" id="quizCustomInput" placeholder="Eigene Antwort eingeben…" />
+            <button type="button" class="quiz-send-btn" id="quizSendBtn" aria-label="Antwort senden">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+            </button>
+          </div>
+        </div>
+
         <div class="composer-hint">Schlaufuchs kann Fehler machen. Kontrolliere wichtige Ergebnisse.</div>
       </div>
     </section>
@@ -1309,16 +1318,16 @@
     return { cleaned, pdfBlocks };
   }
 
-  // Extrahiert ```choice-Codeblöcke aus einem Antworttext, damit sie als
-  // interaktive Karte mit anklickbaren Buttons gerendert werden können,
-  // statt als Rohtext im Chat zu erscheinen. Ebenfalls bewusst KEIN JSON,
-  // aus denselben Gründen wie beim pdf-Block. Format:
+  // Extrahiert ```choice-Codeblöcke aus einem Antworttext. Anders als beim
+  // pdf-Block wird hier NICHTS an der Textstelle im Chat angezeigt - die
+  // Frage(n) werden stattdessen weiter unten über startQuiz() direkt im
+  // Composer-Bereich dargestellt (siehe Quiz-Panel). Format:
   //   Frage: <Frage>
   //   1. <Option>
   //   2. <Option>
   //   ...
   // Es dürfen mehrere choice-Blöcke in einer Antwort vorkommen (mehrere
-  // Fragen nacheinander).
+  // Fragen nacheinander, die die Person Schritt für Schritt beantwortet).
   function parseChoiceBlockBody(body){
     const raw = String(body || '').replace(/^\n+/, '').replace(/\n+$/, '');
     if (!raw.trim()) return null;
@@ -1327,7 +1336,7 @@
 
     const questionMatch = lines[0].match(/^Frage\s*:\s*(.+)$/i);
     const question = (questionMatch ? questionMatch[1] : lines[0]).trim();
-    const optionLines = questionMatch ? lines.slice(1) : lines.slice(1);
+    const optionLines = lines.slice(1);
 
     const options = [];
     optionLines.forEach(line => {
@@ -1346,86 +1355,109 @@
     const choiceBlocks = [];
     const cleaned = String(text || '').replace(/```choice\s*\n([\s\S]*?)```/g, (m, body) => {
       const data = parseChoiceBlockBody(body);
-      const idx = choiceBlocks.length;
-      choiceBlocks.push(data);
-      return `\n\n\u0000CHOICECARD${idx}\u0000\n\n`;
+      if (data) choiceBlocks.push(data);
+      return '';
     });
     return { cleaned, choiceBlocks };
   }
 
-  function buildChoiceCardHtml(cardId, data){
-    const optionsHtml = data.options.map((opt, i) => `
-      <button type="button" class="choice-option" data-choice-text="${escapeHtml(opt)}">
-        <span class="choice-num">${i + 1}</span>
-        <span class="choice-label">${escapeHtml(opt)}</span>
+  /* ---------------- Quiz-Panel: KI-Fragen im Composer beantworten ----------------
+     Wenn eine Antwort einen/mehrere ```choice-Blöcke enthält, übernimmt das
+     Quiz-Panel den Composer-Bereich (Eingabefeld verschwindet). Die Person
+     beantwortet die Fragen nacheinander (Klick auf Option ODER eigene
+     Antwort), eine Fortschrittsanzeige zeigt "Frage X von N". Erst am Ende
+     wird ALLES als eine einzige Nachricht im Format
+       F: <Frage>
+       A: <Antwort>
+     (durch Leerzeile getrennt für jede Frage) an die KI gesendet. */
+  const composerBox = document.getElementById('composerBox');
+  const quizPanel = document.getElementById('quizPanel');
+  const quizProgress = document.getElementById('quizProgress');
+  const quizQuestionEl = document.getElementById('quizQuestion');
+  const quizOptionsEl = document.getElementById('quizOptions');
+  const quizCustomInput = document.getElementById('quizCustomInput');
+  const quizSendBtn = document.getElementById('quizSendBtn');
+  const quizCancelBtn = document.getElementById('quizCancelBtn');
+
+  let activeQuiz = null; // { questions:[{question,options}], index, answers:[{question,answer}] }
+
+  function startQuiz(questions){
+    if (!questions || !questions.length) return;
+    activeQuiz = { questions, index: 0, answers: [] };
+    composerBox.style.display = 'none';
+    quizPanel.style.display = 'flex';
+    renderQuizStep();
+  }
+
+  function renderQuizStep(){
+    if (!activeQuiz) return;
+    const { questions, index } = activeQuiz;
+    const q = questions[index];
+
+    quizProgress.textContent = questions.length > 1
+      ? `Frage ${index + 1} von ${questions.length}`
+      : 'Frage';
+    quizQuestionEl.textContent = q.question;
+
+    quizOptionsEl.innerHTML = q.options.map((opt, i) => `
+      <button type="button" class="quiz-option" data-idx="${i}">
+        <span class="quiz-option-num">${i + 1}</span>
+        <span>${escapeHtml(opt)}</span>
       </button>`).join('');
 
-    return `
-      <div class="choice-card" id="${cardId}">
-        <div class="choice-card-head">
-          <div class="choice-card-question">${escapeHtml(data.question)}</div>
-          <button type="button" class="choice-card-close" data-choice-close aria-label="Frage schließen">✕</button>
-        </div>
-        <div class="choice-card-options">${optionsHtml}</div>
-        <div class="choice-card-custom">
-          <input type="text" class="choice-card-input" data-choice-input placeholder="Eigene Antwort eingeben…" />
-          <button type="button" class="choice-card-send" data-choice-send aria-label="Antwort senden">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
-          </button>
-        </div>
-      </div>`;
-  }
-
-  // Verdrahtet eine bereits ins DOM eingefügte Auswahl-Karte: Klick auf eine
-  // Option ODER eigene Antwort abschicken sendet den Text 1:1 wie eine
-  // normale Chat-Nachricht. Das "✕" schließt die Karte, ohne etwas zu senden.
-  function attachChoiceCard(cardId){
-    const card = document.getElementById(cardId);
-    if (!card) return;
-
-    const finish = (text) => {
-      const clean = String(text || '').trim();
-      if (!clean || card.classList.contains('answered') || card.classList.contains('dismissed')) return;
-      card.classList.add('answered');
-      card.querySelectorAll('button').forEach(b => b.disabled = true);
-      const input = card.querySelector('[data-choice-input]');
-      if (input) input.disabled = true;
-      const chosen = document.createElement('div');
-      chosen.className = 'choice-card-chosen';
-      chosen.textContent = '✓ ' + clean;
-      card.appendChild(chosen);
-      sendChoiceAnswer(clean);
-    };
-
-    card.querySelectorAll('.choice-option').forEach(btn => {
-      btn.addEventListener('click', () => finish(btn.dataset.choiceText));
+    quizOptionsEl.querySelectorAll('.quiz-option').forEach(btn => {
+      btn.addEventListener('click', () => submitQuizAnswer(q.options[Number(btn.dataset.idx)]));
     });
 
-    const closeBtn = card.querySelector('[data-choice-close]');
-    if (closeBtn){
-      closeBtn.addEventListener('click', () => {
-        if (card.classList.contains('answered')) return;
-        card.classList.add('dismissed');
-        card.querySelectorAll('button, input').forEach(el => el.disabled = true);
-      });
-    }
+    quizCustomInput.value = '';
+    quizCustomInput.focus();
+  }
 
-    const input = card.querySelector('[data-choice-input]');
-    const sendBtnEl = card.querySelector('[data-choice-send]');
-    const submitCustom = () => { if (input) finish(input.value); };
-    if (sendBtnEl) sendBtnEl.addEventListener('click', submitCustom);
-    if (input){
-      input.addEventListener('keydown', e => {
-        if (e.key === 'Enter' && !e.isComposing){
-          e.preventDefault();
-          submitCustom();
-        }
-      });
+  function submitQuizAnswer(answerText){
+    if (!activeQuiz) return;
+    const clean = String(answerText || '').trim();
+    if (!clean) return;
+
+    const q = activeQuiz.questions[activeQuiz.index];
+    activeQuiz.answers.push({ question: q.question, answer: clean });
+    activeQuiz.index++;
+
+    if (activeQuiz.index < activeQuiz.questions.length){
+      renderQuizStep();
+    } else {
+      finishQuiz();
     }
   }
 
-  // Schickt die per Klick/eigener Antwort gewählte Auswahl als ganz normale
-  // Nutzer-Nachricht ab (gleicher Ablauf wie sendMessage, aber ohne den
+  function endQuizUI(){
+    activeQuiz = null;
+    quizPanel.style.display = 'none';
+    composerBox.style.display = '';
+  }
+
+  function cancelQuiz(){
+    if (!activeQuiz) return;
+    endQuizUI();
+  }
+
+  async function finishQuiz(){
+    const answers = activeQuiz.answers;
+    endQuizUI();
+    const combined = answers.map(a => `F: ${a.question}\nA: ${a.answer}`).join('\n\n');
+    await sendChoiceAnswer(combined);
+  }
+
+  quizCancelBtn.addEventListener('click', cancelQuiz);
+  quizSendBtn.addEventListener('click', () => submitQuizAnswer(quizCustomInput.value));
+  quizCustomInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.isComposing){
+      e.preventDefault();
+      submitQuizAnswer(quizCustomInput.value);
+    }
+  });
+
+  // Schickt die fertige F:/A:-Zusammenfassung als ganz normale Nutzer-
+  // Nachricht ab (gleicher Ablauf wie sendMessage, aber ohne den
   // Haupt-Composer bzw. eventuell angehängte Bilder zu beeinflussen).
   async function sendChoiceAnswer(text){
     if (isStreaming) return;
@@ -1543,6 +1575,7 @@
 
   function startNewChat(){
     if (isStreaming) return;
+    cancelQuiz();
     currentChatId = null;
     history = [];
     pendingImages = [];
@@ -1562,6 +1595,7 @@
     const chat = chats.find(c => c.id === id);
     if (!chat) return;
 
+    cancelQuiz();
     currentChatId = id;
     history = [];
     pendingImages = [];
@@ -1707,12 +1741,11 @@
 
   // Rendert die fertige Assistant-Antwort: normaler Text via markdownLite,
   // ```pdf-Blöcke werden durch eine Karte ersetzt, die den PDF-Download anstößt.
-  function renderFinalAssistantMessage(ui, text){
+  function renderFinalAssistantMessage(ui, text, live){
     const { cleaned: afterPdf, pdfBlocks } = extractPdfBlocks(text);
     const { cleaned, choiceBlocks } = extractChoiceBlocks(afterPdf);
     let html = markdownLite(cleaned);
     const cardIds = [];
-    const choiceCardIds = [];
 
     pdfBlocks.forEach((data, idx) => {
       const marker = `\u0000PDFCARD${idx}\u0000`;
@@ -1736,30 +1769,18 @@
       }
     });
 
-    choiceBlocks.forEach((data, idx) => {
-      const marker = `\u0000CHOICECARD${idx}\u0000`;
-      const cardId = `choicecard-${Date.now()}-${idx}-${Math.random().toString(36).slice(2,7)}`;
-      choiceCardIds[idx] = cardId;
-      const cardHtml = data
-        ? buildChoiceCardHtml(cardId, data)
-        : `<div class="error-note">⚠️ Die Auswahl konnte nicht gelesen werden.</div>`;
-
-      const wrappedInP = new RegExp(`<p>\\s*${marker}\\s*</p>`);
-      if (wrappedInP.test(html)){
-        html = html.replace(wrappedInP, cardHtml);
-      } else {
-        html = html.split(marker).join(cardHtml);
-      }
-    });
-
     ui.bubble.innerHTML = html;
 
     pdfBlocks.forEach((data, idx) => {
       if (data) requestPdfForCard(cardIds[idx], data);
     });
-    choiceBlocks.forEach((data, idx) => {
-      if (data) attachChoiceCard(choiceCardIds[idx]);
-    });
+
+    // Fragen mit anklickbaren Optionen übernehmen den Composer-Bereich -
+    // aber nur bei einer frisch eingetroffenen (live) Antwort, nicht beim
+    // erneuten Anzeigen eines gespeicherten Chats aus dem Verlauf.
+    if (live && choiceBlocks.length){
+      startQuiz(choiceBlocks);
+    }
   }
 
   function slugifyClient(text){
@@ -1925,7 +1946,7 @@
         ui.root.remove();
         addErrorToDOM('Die KI hat keine Antwort geliefert – möglicherweise wurde die Anfrage durch einen Sicherheitsfilter blockiert.', requestAssistantReply);
       } else {
-        renderFinalAssistantMessage(ui, assistantText);
+        renderFinalAssistantMessage(ui, assistantText, true);
         history.push({ role: 'assistant', content: assistantText });
         persistMessage('assistant', { text: assistantText });
       }
