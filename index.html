@@ -1025,6 +1025,37 @@
     return text;
   }
 
+  // Erzwingt Leerzeilen vor/nach Markdown-Tabellen, auch wenn die KI direkt
+  // ohne Absatz davor ("Hier eine Tabelle:\n| A | B |\n|-|-|\n...") in die
+  // Tabelle springt. Sonst würde die Tabellenzeile mit dem Satz davor in
+  // einem gemeinsamen Absatz-Block landen und nicht als Tabelle erkannt.
+  function isolateTables(text){
+    const lines = text.split('\n');
+    const sepRe = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+    const out = [];
+    let i = 0;
+    while (i < lines.length){
+      const line = lines[i];
+      const next = lines[i + 1];
+      const looksLikeHeaderRow = line.includes('|') && line.trim() !== '' && !sepRe.test(line);
+      const looksLikeSepRow = next !== undefined && sepRe.test(next) && next.includes('-');
+      if (looksLikeHeaderRow && looksLikeSepRow){
+        if (out.length && out[out.length - 1].trim() !== '') out.push('');
+        out.push(line, next);
+        i += 2;
+        while (i < lines.length && lines[i].includes('|') && lines[i].trim() !== ''){
+          out.push(lines[i]);
+          i++;
+        }
+        if (i < lines.length && lines[i].trim() !== '') out.push('');
+        continue;
+      }
+      out.push(line);
+      i++;
+    }
+    return out.join('\n');
+  }
+
   // Wandelt eine begrenzte Teilmenge von Markdown in HTML um. Robust gegen
   // typische KI-Ausgaben: Überschriften jeder Ebene (# bis ######),
   // Trennlinien (---, ***, ___), Zitate (> ...), Listen, Codeblöcke
@@ -1040,7 +1071,7 @@
       return `\n\n\u0000CB${codeBlocks.length - 1}\u0000\n\n`;
     });
 
-    const escaped = escapeHtml(withPlaceholders);
+    const escaped = isolateTables(escapeHtml(withPlaceholders));
     const blocks = escaped.split(/\n{2,}/);
     let html = '';
 
@@ -1628,9 +1659,17 @@
         scrollToBottom();
       }
 
-      renderFinalAssistantMessage(ui, assistantText || '_(keine Antwort erhalten)_');
-      history.push({ role: 'assistant', content: assistantText });
-      persistMessage('assistant', { text: assistantText || '' });
+      if (!assistantText.trim()){
+        // Leere Antwort (z. B. durch Sicherheitsfilter des Modells/Providers
+        // blockiert) wird wie ein Fehler behandelt, inkl. "Erneut versuchen"-
+        // Button, statt als leere Chat-Nachricht angezeigt zu werden.
+        ui.root.remove();
+        addErrorToDOM('Die KI hat keine Antwort geliefert – möglicherweise wurde die Anfrage durch einen Sicherheitsfilter blockiert.', requestAssistantReply);
+      } else {
+        renderFinalAssistantMessage(ui, assistantText);
+        history.push({ role: 'assistant', content: assistantText });
+        persistMessage('assistant', { text: assistantText });
+      }
 
     } catch (err){
       ui.root.remove();
@@ -1717,4 +1756,3 @@
 </script>
 </body>
 </html>
-
