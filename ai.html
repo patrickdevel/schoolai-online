@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Schlaufuchs – Deine Schul-KI</title>
 <meta name="description" content="KI-Assistent für Hausaufgaben, Bildanalyse und Arbeitsblätter" />
 <link rel="icon" type="image/png" href="logo.png" />
@@ -31,13 +31,14 @@
     --shadow-sm:0 2px 10px -4px rgba(22,38,28,0.18);
   }
   *{box-sizing:border-box;}
-  html,body{height:100%;}
+  html,body{height:100%; height:100dvh;}
   body{
     margin:0;
     font-family:'Figtree',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
     background:var(--paper);
     color:var(--ink);
     -webkit-font-smoothing:antialiased;
+    overflow:hidden;
   }
   button{font-family:inherit;}
   textarea{font-family:inherit;}
@@ -46,6 +47,7 @@
     display:grid;
     grid-template-columns:248px 1fr;
     height:100vh;
+    height:100dvh;
     overflow:hidden;
   }
 
@@ -227,6 +229,7 @@
     min-width:0;
     width:100%;
     height:100vh;
+    height:100dvh;
     overflow:hidden;
   }
   .view{
@@ -442,6 +445,23 @@
     font-size:13.5px;
     max-width:78%;
   }
+  .retry-btn{
+    align-self:flex-start;
+    display:flex;
+    align-items:center;
+    gap:6px;
+    background:var(--panel);
+    border:1px solid var(--paper-line);
+    color:var(--ink);
+    padding:8px 14px;
+    border-radius:999px;
+    font-size:13px;
+    font-weight:600;
+    cursor:pointer;
+    box-shadow:var(--shadow-sm);
+  }
+  .retry-btn:hover{background:var(--paper);border-color:var(--red);}
+  .retry-btn:active{transform:scale(.97);}
 
   .typing-dots{display:inline-flex;gap:4px;padding:4px 0;}
   .typing-dots span{
@@ -458,7 +478,7 @@
     position:sticky;
     bottom:0;
     z-index:5;
-    padding:14px 24px 20px;
+    padding:14px 24px calc(20px + env(safe-area-inset-bottom));
     background:var(--paper);
   }
   .composer-wrap::before{
@@ -757,7 +777,7 @@
       display:flex;
     }
     .chat-inner{padding:0 14px 30px;}
-    .composer-wrap{padding:10px 12px 14px;}
+    .composer-wrap{padding:10px 12px calc(14px + env(safe-area-inset-bottom));}
     .worksheet-view{padding:16px;}
     .suggestions{grid-template-columns:1fr;}
     .bubble-col,.thinking-box,.error-note{max-width:92%;}
@@ -1425,13 +1445,22 @@
     }
   }
 
-  function addErrorToDOM(text){
+  function addErrorToDOM(text, onRetry){
     if (emptyState.parentElement) emptyState.remove();
     const msg = document.createElement('div');
     msg.className = 'msg assistant';
     msg.innerHTML = `
       <div class="avatar">🦊</div>
-      <div class="error-note">⚠️ ${escapeHtml(text)}</div>`;
+      <div class="bubble-col">
+        <div class="error-note">⚠️ ${escapeHtml(text)}</div>
+        ${onRetry ? '<button type="button" class="retry-btn">↻ Erneut versuchen</button>' : ''}
+      </div>`;
+    if (onRetry){
+      msg.querySelector('.retry-btn').addEventListener('click', () => {
+        msg.remove();
+        onRetry();
+      });
+    }
     chatInner.appendChild(msg);
     scrollToBottom();
   }
@@ -1455,6 +1484,15 @@
     pendingImages = [];
     renderAttachRow();
 
+    await requestAssistantReply();
+  }
+
+  // Fragt die Assistant-Antwort für den aktuellen `history`-Stand an.
+  // Wird sowohl beim normalen Senden als auch beim "Erneut versuchen"
+  // nach einem Fehler aufgerufen (ohne die letzte User-Nachricht erneut
+  // hinzuzufügen, da sie schon in `history` steht).
+  async function requestAssistantReply(){
+    if (isStreaming) return;
     isStreaming = true;
     sendBtn.disabled = true;
     const ui = addAssistantSkeleton();
@@ -1474,7 +1512,7 @@
         let errMsg = 'Der Server hat einen Fehler gemeldet.';
         try { const j = await res.json(); if (j.error) errMsg = j.error; } catch(e){}
         ui.root.remove();
-        addErrorToDOM(errMsg);
+        addErrorToDOM(errMsg, requestAssistantReply);
         isStreaming = false;
         sendBtn.disabled = false;
         return;
@@ -1525,7 +1563,7 @@
 
     } catch (err){
       ui.root.remove();
-      addErrorToDOM('Verbindung unterbrochen: ' + err.message);
+      addErrorToDOM('Verbindung unterbrochen: ' + err.message, requestAssistantReply);
     }
 
     isStreaming = false;
