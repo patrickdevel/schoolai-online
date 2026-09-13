@@ -62,7 +62,36 @@ Titel: Vokabeln Unit 5
 - **the weather** – das Wetter
 - **to rain** – regnen
 \`\`\`
-Nutze den pdf-Codeblock NUR, wenn wirklich eine Datei gewünscht ist - für normale Erklärungen im Chat antworte ganz normal in Text ohne diesen Block.`;
+Nutze den pdf-Codeblock NUR, wenn wirklich eine Datei gewünscht ist - für normale Erklärungen im Chat antworte ganz normal in Text ohne diesen Block.
+
+Auswahl-Fragen mit anklickbaren Buttons:
+Wenn es das Gespräch erleichtert, der Person mehrere kurze, klar abgegrenzte Antwortmöglichkeiten anzubieten (z. B. um ein unklares Anliegen einzugrenzen, das Fach/Niveau abzufragen, zwischen Vorgehensweisen wählen zu lassen), kannst du direkt im Fließtext einen Codeblock mit der Sprache "choice" einfügen. Die Person sieht dann statt Fließtext eine Frage mit anklickbaren Buttons (plus einem Feld für eine eigene Antwort). Klickt sie eine Option an oder tippt eigenen Text ein, wird das 1:1 wie eine normale Chat-Nachricht von ihr an dich gesendet.
+
+Du darfst auch MEHRERE choice-Blöcke in einer einzigen Antwort verwenden, wenn du nacheinander mehrere kurze Fragen stellen willst (z. B. erst Fach, dann Klassenstufe) - schreibe sie einfach nacheinander in deine Antwort.
+
+WICHTIG: Auch das ist KEIN JSON! Verwende exakt dieses einfache Format (echte Zeilenumbrüche, ganz normaler Text):
+
+\`\`\`choice
+Frage: <kurze, konkrete Frage>
+1. <Option 1>
+2. <Option 2>
+3. <Option 3>
+\`\`\`
+
+Regeln:
+- Zeile 1 beginnt IMMER mit "Frage: " gefolgt von der Frage.
+- Danach 2 bis 5 Optionen, jede Zeile beginnt mit einer Zahl, einem Punkt und einem Leerzeichen ("1. ", "2. ", "3. " usw.).
+- Optionen kurz halten (wenige Wörter, keine ganzen Sätze, kein Fließtext).
+- Setze den choice-Block gezielt und sparsam ein - nicht bei jeder Antwort, nicht als Ersatz für eine inhaltliche Erklärung, und nicht wenn die Frage der Person schon eindeutig ist.
+- Auch hier immer Du-Form.
+Beispiel:
+\`\`\`choice
+Frage: Worum geht es bei deiner Frage?
+1. Mathe-Aufgabe
+2. Sprachen/Grammatik
+3. Referat vorbereiten
+4. Etwas anderes
+\`\`\``;
 
 function errorResponse(message, status) {
   return new Response(JSON.stringify({ error: message }), {
